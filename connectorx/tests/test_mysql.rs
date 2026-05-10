@@ -3,7 +3,7 @@
 mod test_db;
 
 use arrow::{
-    array::{Float64Array, Int16Array, Int64Array, StringArray},
+    array::{Float64Array, Int16Array, Int32Array, Int64Array, StringArray, UInt64Array},
     record_batch::RecordBatch,
 };
 use connectorx::{
@@ -97,16 +97,16 @@ fn test_mysql_pre_execution_queries() {
     assert!(result[0]
         .column(0)
         .as_any()
-        .downcast_ref::<Float64Array>()
+        .downcast_ref::<UInt64Array>()
         .unwrap()
-        .eq(&Float64Array::from(vec![2151.0])));
+        .eq(&UInt64Array::from(vec![2151])));
 
     assert!(result[0]
         .column(1)
         .as_any()
-        .downcast_ref::<Float64Array>()
+        .downcast_ref::<UInt64Array>()
         .unwrap()
-        .eq(&Float64Array::from(vec![2252.0])));
+        .eq(&UInt64Array::from(vec![2252])));
 }
 
 #[test]
@@ -154,14 +154,14 @@ fn test_mysql_partitioned_pre_execution_queries() {
         let setting = record_batch
             .column(1)
             .as_any()
-            .downcast_ref::<Float64Array>()
+            .downcast_ref::<UInt64Array>()
             .unwrap()
             .value(0);
         result_map.insert(name, setting);
     }
 
-    assert_eq!(result_map.get("max_execution_time"), Some(&2151.0));
-    assert_eq!(result_map.get("wait_timeout"), Some(&2252.0));
+    assert_eq!(result_map.get("max_execution_time"), Some(&2151u64));
+    assert_eq!(result_map.get("wait_timeout"), Some(&2252u64));
 }
 
 pub fn verify_arrow_results(result: Vec<RecordBatch>) {
@@ -173,9 +173,9 @@ pub fn verify_arrow_results(result: Vec<RecordBatch>) {
                 assert!(r
                     .column(0)
                     .as_any()
-                    .downcast_ref::<Int64Array>()
+                    .downcast_ref::<Int32Array>()
                     .unwrap()
-                    .eq(&Int64Array::from(vec![1, 2])));
+                    .eq(&Int32Array::from(vec![1, 2])));
                 assert!(r
                     .column(1)
                     .as_any()
@@ -191,17 +191,17 @@ pub fn verify_arrow_results(result: Vec<RecordBatch>) {
                 assert!(r
                     .column(3)
                     .as_any()
-                    .downcast_ref::<Int64Array>()
+                    .downcast_ref::<Int32Array>()
                     .unwrap()
-                    .eq(&Int64Array::from(vec![None, None])));
+                    .eq(&Int32Array::from(vec![None, None])));
             }
             4 => {
                 assert!(r
                     .column(0)
                     .as_any()
-                    .downcast_ref::<Int64Array>()
+                    .downcast_ref::<Int32Array>()
                     .unwrap()
-                    .eq(&Int64Array::from(vec![3, 4, 5, 6])));
+                    .eq(&Int32Array::from(vec![3, 4, 5, 6])));
                 assert!(r
                     .column(1)
                     .as_any()
@@ -217,9 +217,9 @@ pub fn verify_arrow_results(result: Vec<RecordBatch>) {
                 assert!(r
                     .column(3)
                     .as_any()
-                    .downcast_ref::<Int64Array>()
+                    .downcast_ref::<Int32Array>()
                     .unwrap()
-                    .eq(&Int64Array::from(vec![None, None, None, None])));
+                    .eq(&Int32Array::from(vec![None, None, None, None])));
             }
             _ => {
                 println!("got {} rows in a record batch!", r.num_rows());
