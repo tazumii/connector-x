@@ -19,7 +19,7 @@ use log::debug;
 use owning_ref::OwningHandle;
 use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Row, Rows, Statement};
+use rusqlite::{types::ValueRef, Row, Rows, Statement};
 use sqlparser::dialect::SQLiteDialect;
 use std::convert::TryFrom;
 pub use typesystem::SQLiteTypeSystem;
@@ -349,9 +349,75 @@ impl_produce!(
     i32,
     i16,
     f64,
-    Box<str>,
     NaiveDate,
     NaiveTime,
     NaiveDateTime,
     Vec<u8>,
 );
+
+#[rustfmt::skip]
+static CP850_HIGH: [char; 128] = [
+    'Ç', 'ü', 'é', 'â', 'ä', 'à', 'å', 'ç', 'ê', 'ë', 'è', 'ï', 'î', 'ì', 'Ä', 'Å', // 0x80
+    'É', 'æ', 'Æ', 'ô', 'ö', 'ò', 'û', 'ù', 'ÿ', 'Ö', 'Ü', 'ø', '£', 'Ø', '×', 'ƒ', // 0x90
+    'á', 'í', 'ó', 'ú', 'ñ', 'Ñ', 'ª', 'º', '¿', '®', '¬', '½', '¼', '¡', '«', '»', // 0xA0
+    '░', '▒', '▓', '│', '┤', 'Á', 'Â', 'À', '©', '╣', '║', '╗', '╝', '¢', '¥', '┐', // 0xB0
+    '└', '┴', '┬', '├', '─', '┼', 'ã', 'Ã', '╚', '╔', '╩', '╦', '╠', '═', '╬', '¤', // 0xC0
+    'ð', 'Ð', 'Ê', 'Ë', 'È', 'ı', 'Í', 'Î', 'Ï', '┘', '┌', '█', '▄', '¦', 'Ì', '▀', // 0xD0
+    'Ó', 'ß', 'Ô', 'Ò', 'õ', 'Õ', 'µ', 'þ', 'Þ', 'Ú', 'Û', 'Ù', 'ý', 'Ý', '¯', '´', // 0xE0
+    '\u{00AD}', '±', '‗', '¾', '¶', '§', '÷', '¸', '°', '¨', '·', '¹', '³', '²', '■', '\u{00A0}', // 0xF0
+];
+
+fn decode_cp850(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| {
+            if b < 0x80 {
+                b as char
+            } else {
+                CP850_HIGH[(b - 0x80) as usize]
+            }
+        })
+        .collect()
+}
+
+fn text_bytes_to_string(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => decode_cp850(bytes),
+    }
+}
+
+impl<'r, 'a> Produce<'r, Box<str>> for SQLiteSourcePartitionParser<'a> {
+    type Error = SQLiteSourceError;
+
+    #[throws(SQLiteSourceError)]
+    fn produce(&'r mut self) -> Box<str> {
+        let (row, col) = self.next_loc()?;
+        match row.get_ref(col)? {
+            ValueRef::Text(bytes) => text_bytes_to_string(bytes).into_boxed_str(),
+            ValueRef::Blob(bytes) => text_bytes_to_string(bytes).into_boxed_str(),
+            ValueRef::Integer(v) => v.to_string().into_boxed_str(),
+            ValueRef::Real(v) => v.to_string().into_boxed_str(),
+            ValueRef::Null => throw!(anyhow!(
+                "Sqlite got null value for non-null string column {}",
+                col
+            )),
+        }
+    }
+}
+
+impl<'r, 'a> Produce<'r, Option<Box<str>>> for SQLiteSourcePartitionParser<'a> {
+    type Error = SQLiteSourceError;
+
+    #[throws(SQLiteSourceError)]
+    fn produce(&'r mut self) -> Option<Box<str>> {
+        let (row, col) = self.next_loc()?;
+        match row.get_ref(col)? {
+            ValueRef::Null => None,
+            ValueRef::Text(bytes) => Some(text_bytes_to_string(bytes).into_boxed_str()),
+            ValueRef::Blob(bytes) => Some(text_bytes_to_string(bytes).into_boxed_str()),
+            ValueRef::Integer(v) => Some(v.to_string().into_boxed_str()),
+            ValueRef::Real(v) => Some(v.to_string().into_boxed_str()),
+        }
+    }
+}
